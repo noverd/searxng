@@ -2,7 +2,7 @@
 """Yandex (Web, images)"""
 
 from json import loads
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from html import unescape
 from lxml import html
 from searx.exceptions import SearxEngineCaptchaException
@@ -11,7 +11,7 @@ from searx.utils import humanize_bytes, eval_xpath, eval_xpath_list, extract_tex
 
 # Engine metadata
 about = {
-    "website": 'https://yandex.com/',
+    "website": 'https://yandex.ru/',
     "wikidata_id": 'Q5281',
     "official_api_documentation": "?",
     "use_official_api": False,
@@ -20,18 +20,39 @@ about = {
 }
 
 # Engine configuration
-categories = []
-paging = True
+categories = ['general', 'web']
+paging = False
+safesearch = True
 search_type = ""
 
 # Search URL
-base_url_web = 'https://yandex.com/search/site/'
-base_url_images = 'https://yandex.com/images/search'
+base_url_web = 'https://yandex.ru/yandsearch'
+base_url_images = 'https://yandex.ru/images/search'
 
+# Search xPath
 results_xpath = '//li[contains(@class, "serp-item")]'
-url_xpath = './/a[@class="b-serp-item__title-link"]/@href'
-title_xpath = './/h3[@class="b-serp-item__title"]/a[@class="b-serp-item__title-link"]/span'
-content_xpath = './/div[@class="b-serp-item__content"]//div[@class="b-serp-item__text"]'
+url_xpath = './/a[@class="OrganicTitle-Link"]/@href'
+title_xpath = './/h2[@class="OrganicTitle-LinkText"]/a[@class="OrganicTitle-Link"]/span'
+content_xpath = './/div[@class="Organic-ContentWrapper"]//div[@class="OrganicText"]'
+
+
+# Proxy URL
+proxy_url_web = "https://www.etools.ch"
+proxy_search_path = (
+    # fmt: off
+    '/searchAdvancedSubmit.do'
+    '?query={search_term}'
+    '&pageResults=20'
+    '&safeSearch={safesearch}'
+    '&dataSources=mySettings'
+    # fmt: on
+)
+
+# Proxy xPath
+proxy_results_xpath = '//table[@class="result"]//td[@class="record"]'
+proxy_url_xpath = './a/@href'
+proxy_title_xpath = './a//text()'
+proxy_content_xpath = './/div[@class="text"]//text()'
 
 
 def catch_bad_response(resp):
@@ -40,27 +61,21 @@ def catch_bad_response(resp):
 
 
 def request(query, params):
-    query_params_web = {
-        "tmpl_version": "releases",
-        "text": query,
-        "web": "1",
-        "frame": "1",
-        "searchid": "3131712",
-    }
+    if params['safesearch']:
+        safesearch = 'true'
+    else:
+        safesearch = 'false'
 
     query_params_images = {
         "text": query,
         "uinfo": "sw-1920-sh-1080-ww-1125-wh-999",
     }
 
-    if params['pageno'] > 1:
-        query_params_web.update({"p": params["pageno"] - 1})
-        query_params_images.update({"p": params["pageno"] - 1})
-
-    params["cookies"] = {'cookie': "yp=1716337604.sp.family%3A0#1685406411.szm.1:1920x1080:1920x999"}
+    # Settings set to only allow Yandex, and some other stuff
+    params['cookies']['searchSettings'] = 'VER_3.3-autocomplete_true-country_web-customerId_-dataSourceResults_20-dataSources_mySettings-excludeQuery_-language_all-markKeyword_false-openNewWindow_true-pageResults_20-queryAutoFocus_true-rankCalibration_%28Base_0%29%28Bing_0%29%28Brave_0%29%28DuckDuckGo_0%29%28Google_0%29%28Lilo_0%29%28Mojeek_0%29%28Qwant_0%29%28Search_0%29%28Tiger_0%29%28Wikipedia_0%29%28Yahoo_0%29%28Yandex_4%29-redirectLinks_false-safeSearch_false-showAdvertisement_true-showSearchStatus_true-timeout_4000-usePost_false'
 
     if search_type == 'web':
-        params['url'] = f"{base_url_web}?{urlencode(query_params_web)}"
+        params['url'] = proxy_url_web + proxy_search_path.format(search_term=quote(query), safesearch=safesearch)
     elif search_type == 'images':
         params['url'] = f"{base_url_images}?{urlencode(query_params_images)}"
 
@@ -76,16 +91,21 @@ def response(resp):
 
         results = []
 
-        for result in eval_xpath_list(dom, results_xpath):
-            results.append(
-                {
-                    'url': extract_text(eval_xpath(result, url_xpath)),
-                    'title': extract_text(eval_xpath(result, title_xpath)),
-                    'content': extract_text(eval_xpath(result, content_xpath)),
-                }
-            )
+        for result in eval_xpath(dom, proxy_results_xpath):
+            # Check if the result contains an affiliate link
+            if eval_xpath(result, './/span[@class="affiliate"]'):
+                continue  # Likely hit a node that is an ad
+            url_list = eval_xpath(result, proxy_url_xpath)
+            if not url_list:
+                continue  # Likely hit a node that is an ad
+            url = url_list[0]
+            title = extract_text(eval_xpath(result, proxy_title_xpath))
+            content = extract_text(eval_xpath(result, proxy_content_xpath))
+
+            results.append({'url': url, 'title': title, 'content': content})
 
         return results
+
 
     if search_type == 'images':
 
