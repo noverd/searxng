@@ -1999,7 +1999,8 @@ engines:
     search_type: web
     shortcut: yd
     disabled: true
-    inactive: true
+    inactive: false
+    etools_proxy: true
 
   - name: yandex images
     engine: yandex
@@ -2007,7 +2008,7 @@ engines:
     search_type: images
     shortcut: ydi
     disabled: true
-    inactive: true
+    inactive: false
 
   - name: yandex music
     engine: yandex_music
