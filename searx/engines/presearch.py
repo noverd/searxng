@@ -73,7 +73,7 @@ Implementations
 from urllib.parse import urlencode, urlparse
 from searx import locales
 from searx.network import get
-from searx.utils import gen_useragent, html_to_text
+from searx.utils import gen_useragent, html_to_text, parse_duration_string
 
 about = {
     "website": "https://presearch.io",
@@ -184,6 +184,8 @@ def _fix_title(title, url):
 
 def parse_search_query(json_results):
     results = []
+    if not json_results:
+        return results
 
     for item in json_results.get('specialSections', {}).get('topStoriesCompact', {}).get('data', []):
         result = {
@@ -245,7 +247,7 @@ def response(resp):
     json_resp = resp.json()
 
     if search_type == 'search':
-        results = parse_search_query(json_resp.get('results'))
+        results = parse_search_query(json_resp.get('results', {}))
 
     elif search_type == 'images':
         for item in json_resp.get('images', []):
@@ -264,13 +266,17 @@ def response(resp):
         # a video and not to a video stream --> SearXNG can't use the video template.
 
         for item in json_resp.get('videos', []):
+            duration = item.get('duration')
+            if duration:
+                duration = parse_duration_string(duration)
+
             results.append(
                 {
                     'title': html_to_text(item['title']),
                     'url': item.get('link'),
                     'content': item.get('description', ''),
                     'thumbnail': item.get('image'),
-                    'length': item.get('duration'),
+                    'length': duration,
                 }
             )
 
